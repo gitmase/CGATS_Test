@@ -1,0 +1,28 @@
+
+                measurement.Originator 
+                measurement.Creation_Date
+                measurement.Target_ID
+                measurement.Media_Manufacturer
+                measurement.Media_Prod_Date
+                measurement.Device_Serial_Number
+                measurement.Device_Model
+                measurement.Software
+                measurement.Comment
+                measurement.Measurement_Name
+                measurement.Description
+                measurement.Heat_Press_Name
+                measurement.Heat_Press_Temp
+                measurement.Heat_Press_Time
+                measurement.Ink_Manufacturer
+                measurement.Ink_Set
+                measurement.Ink_Type
+                measurement.Sample_Backing
+                measurement.Measurement_illumination
+                measurement.Measurement_condition
+                measurement.Measurement_filter
+                measurement.Number_Of_Fields
+                measurement.Number_Of_Sets
+                measurement.Row_Length
+                # print(line)
+
+                
