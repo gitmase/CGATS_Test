@@ -1,6 +1,8 @@
 import json
 import uuid
 import os
+
+# Version 1.2
 # -*- coding: utf-8 -*-
 
 # Converts a CGATS Color Data file to JSON format
