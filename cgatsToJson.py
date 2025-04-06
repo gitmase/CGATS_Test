@@ -1,6 +1,8 @@
 import json
 import uuid
 
+
+
 class MeasurementData:
     # Measurement data class which will be stored as fields in a database table
     def __init__(self,
@@ -19,14 +21,15 @@ class MeasurementData:
                  Device_Manufacturer=None,
                  Device_Model=None,
                  Device_Serial_Number=None,
-                 Measurement_Geometry_Choice=None,
+                 Measurement_Geometry=None,
                  Measurement_Illumination=None,
                  Measurement_Angle=None,
                  Measurement_Filter=None,
                  Measurement_Polarization=None,
                  Sample_Backing=None,
                  Software=None,
-                 Heat_Press_Name=None):
+                 Heat_Press_Name=None,
+                 Data_Format=None ):
         self.Measurement_ID = Measurement_ID
         self.Measurement_Name = Measurement_Name
         self.Originator = Originator
@@ -42,7 +45,7 @@ class MeasurementData:
         self.Device_Manufacturer = Device_Manufacturer
         self.Device_Model = Device_Model
         self.Device_Serial_Number = Device_Serial_Number
-        self.Measurement_Geometry_Choice = Measurement_Geometry_Choice
+        self.Measurement_Geometry = Measurement_Geometry
         self.Measurement_Illumination = Measurement_Illumination
         self.Measurement_Angle = Measurement_Angle
         self.Measurement_Filter = Measurement_Filter
@@ -50,6 +53,7 @@ class MeasurementData:
         self.Sample_Backing = Sample_Backing
         self.Software = Software
         self.Heat_Press_Name = Heat_Press_Name
+        self.Data_Format = Data_Format
 
     def to_dict(self):
         """Convert the object to a dictionary."""
@@ -72,133 +76,191 @@ def remove_first_word(input_string):
     return rest.strip(' \t"')
 
 
+def get_first_word(input_string: str) -> str:
+        # Split on tabs or space
+        # Strip leading and trailing quotes, spaces and tabs
+        # Assumes that there is max of one tab in the input string
+        # Return None on error
+        try:
+            # Either a tab or a space can be the separator
+            input_string = input_string.strip(' /t')
+            # Split on the first occurrence of either a space or tab
+            split_char = '\t' if '\t' in input_string else ' '
+            first, rest = input_string.split(split_char, 1)
+            first =first.strip()
+            # Remove trailing colon if present
+            first[:-1] if first.endswith(':') else first
+
+        except ValueError:
+            return None
+        return first
+
+
+def replace_tabs_with_spaces(input_string):
+    return input_string.replace('\t', ' ')
+
+
+def to_number(s):
+    """Attempts to convert a string to an int or float. Returns None if invalid."""
+    try:
+        return int(s) if "." not in s else float(s)
+    except ValueError:
+        return None
+
+def convert_array_values(arr):
+    """Converts numeric strings in an array to int or float, leaving others unchanged."""
+    def convert(value):
+        if isinstance(value, (int, float)):  # Already a number
+            return value
+        if isinstance(value, str) and value.isdigit():  # Integer
+            return int(value)
+        try:
+            return float(value) if isinstance(value, str) and value.replace(".", "", 1).isdigit() else value
+        except ValueError:
+            return value  # Keep as is if not a valid number
+
+    return [convert(v) for v in arr]
+
+
+def convert_values(key_array, values):
+    """Creates a dictionary from keys and values, converting numeric strings to numbers."""
+    def convert(value):
+        # Check if value is an integer
+        if value.isdigit():
+            return int(value)
+        # Check if value is a float
+        try:
+            return float(value) if "." in value and value.replace(".", "", 1).isdigit() else value
+        except ValueError:
+            return value  # Return as-is if not a number
+
+    return dict(zip(key_array, (convert(v) for v in values)))
+
+
 def parse_descriptive_lines(file_path_local):
     # print(f"Reading file: {file_path_local}")
-    descriptive_lines = []
-    # Generate a GUID for Measurement_ID
-
+    keys_array = ['Measurement_ID']
+    values=[measurement.Measurement_ID]
+    print(f"Test Measurement_ID: {measurement.Measurement_ID}")
+    key = None
+    bdf = False
     with open(file_path_local, 'r') as file:
         for line in file:
             line = line.strip().upper()
-            if line.startswith("BEGIN"):
-                break
-            try:
-                if remove_first_word(line) is None:
-                    continue
-            except IndexError:
-                # print(f"Error processing line: {line}")
+            if line.startswith("BEGIN_DATA_FORMAT"):
+                print(f"Skipping line bdf: {line}")
+                bdf = True
                 continue
-
-        match True:
-            case _ if line.startswith("CREATOR") or line.startswith("ORIGINATOR"):
+            elif line.startswith("BEGIN"):
+                print(f"Skipping line: {line}")
+                break
+            elif bdf:
+                line = replace_tabs_with_spaces(line)
+                measurement.Data_Format = line
+                keys_array.append('DATA_FORMAT')
+                values.append(line)
+                bdf = False
+                print(f"Data format: {line}")
+                continue
+            else:
+                try:
+                    if remove_first_word(line) is None:
+                        continue
+                except IndexError:
+                    # print(f"Error processing line: {line}")
+                    continue
+            #
+            if line.startswith("CREATOR") or line.startswith("ORIGINATOR"):
                 measurement.Originator = remove_first_word(line)
-            case _ if line.startswith("CREATION_DATE") or line.startswith("CREATED"):
+                key = "ORIGINATOR"
+            elif line.startswith("CREATION_DATE") or line.startswith("CREATED"):
                 measurement.Creation_Date = remove_first_word(line)
-            case _ if line.startswith("TARGET") or line.startswith("TARGET_NAME"):
+                key = "CREATION_DATE"
+                remove_first_word(line)
+            elif line.startswith("TARGET") or line.startswith("TARGET_NAME"):
                 measurement.Target_ID = remove_first_word(line)
-            case _ if line.startswith("MANUFACTURER"):
+                key = "ORIGINATOR"
+            elif line.startswith("MANUFACTURER"):
                 measurement.Media_Manufacturer = remove_first_word(line)
-            case _ if line.startswith("MATERIAL"):
+                key = "MEDIA_MANUFACTURER"
+            elif line.startswith("MATERIAL"):
                 measurement.Media_Material = remove_first_word(line)
-            case _ if line.startswith("PROD_DATE") or line.startswith("CREATED"):
+                key = "MEDIA_MATERIAL"
+            elif line.startswith("PROD_DATE") or line.startswith("CREATED"):
                 measurement.Media_Prod_Date = remove_first_word(line)
-            case _ if line.startswith("SERIAL"):
+                key = "MEDIA_PROD_DATE"
+            elif line.startswith("SERIAL"):
                 measurement.Device_Serial_Number = remove_first_word(line)
-            case _ if line.startswith("INSTRUMENTATION") or line.startswith("INSTRUMENT") or line.startswith("DEVICE"):
+                key = "DEVICE_SERIAL_NUMBER"
+            elif line.startswith("INSTRUMENTATION") or line.startswith("INSTRUMENT") or line.startswith("DEVICE"):
                 measurement.Device_Model = remove_first_word(line)
-            case _ if line.startswith("SOFTWARE"):
+                key = "DEVICE_MODEL"
+            elif line.startswith("SOFTWARE"):
                 measurement.Software = remove_first_word(line)
-            case _ if line.startswith("COMMENT"):
+            elif line.startswith("COMMENT"):
                 measurement.Comment = remove_first_word(line)
-            case _ if line.startswith("JOB_NAME") or line.startswith("JOB_ID"):
+                key = "COMMENT"
+            elif line.startswith("JOB_NAME") or line.startswith("JOB_ID"):
                 measurement.Measurement_Name = remove_first_word(line)
-            case _ if line.startswith("DESCRIPTION"):
+                key = "MEASUREMENT_NAME"
+            elif line.startswith("DESCRIPTION") or line.startswith("DESCRIPTOR"):
                 measurement.Description = remove_first_word(line)
-            case _ if line.startswith("HEAT_PRESS_NAME"):
+                key = "DESCRIPTION"
+            elif line.startswith("HEAT_PRESS_NAME"):
                 measurement.Heat_Press_Name = remove_first_word(line)
-            case _ if line.startswith("HEAT_PRESS_TEMP"):
+                key = "HEAT_PRESS_NAME"
+            elif line.startswith("HEAT_PRESS_TEMP"):
                 measurement.Heat_Press_Temp = remove_first_word(line)
-            case _ if line.startswith("HEAT_PRESS_TIME"):
-                measurement.Heat_Press_Time = remove_first_word(line)
-            case _ if line.startswith("PRINTER_NAME"):
-                measurement.Printer_Name = remove_first_word(line)
-            case _ if line.startswith("INK_MANUFACTURER"):
+                key = "HEAT_PRESS_TEMP"
+            elif line.startswith("HEAT_PRESS_TIME"):
+                line = "HEAT_PRESS_TIME: " + remove_first_word(line)
+                key = "HEAT_PRESS_TIME"
+            elif line.startswith("PRINTER_NAME"):
+                line = "PRINTER_NAME: " + remove_first_word(line)
+                key = "PRINTER_NAME"
+            elif line.startswith("INK_MANUFACTURER"):
                 measurement.Ink_Manufacturer = remove_first_word(line)
-            case _ if line.startswith("INK_SET"):
+                key = "INK_MANUFACTURER"
+            elif line.startswith("INK_SET"):
                 measurement.Ink_Set = remove_first_word(line)
-            case _ if line.startswith("INK_TYPE"):
+                key = "INK_SET"
+            elif line.startswith("INK_TYPE"):
                 measurement.Ink_Type = remove_first_word(line)
-            case _ if line.startswith("SAMPLE_BACKING"):
+                key = "INK_TYPE"
+            elif line.startswith("SAMPLE_BACKING"):
                 measurement.Sample_Backing = remove_first_word(line)
-            case _ if line.startswith("ILLUMINANT") or line.startswith("ILLUMINATION_NAME"):
+                key = "SAMPLE_BACKING"
+            elif line.startswith("ILLUMINANT") or line.startswith("ILLUMINATION_NAME"):
                 measurement.Measurement_Illumination = remove_first_word(line)
-            case _ if line.startswith("OBSERVER") or line.startswith("OBSERVER_ANGLE"):
+                key = "MEASUREMENT_ILLUMINATION"
+            elif line.startswith("OBSERVER") or line.startswith("OBSERVER_ANGLE" or "MEASUREMENT_ANGLE"):
                 measurement.Measurement_Angle = remove_first_word(line)
-            case _ if line.startswith("NUMBER_OF_FIELDS"):
+                key = "MEASUREMENT_ANGLE"
+            elif line.startswith("NUMBER_OF_FIELDS"):
                 measurement.Number_Of_Fields = remove_first_word(line)
-            case _ if line.startswith("NUMBER_OF_SETS"):
+                key = "NUMBER_OF_FIELDS"
+            elif line.startswith("NUMBER_OF_SETS"):
                 measurement.Number_Of_Sets = remove_first_word(line)
-            case _ if line.startswith("LGOROWLENGTH"):
-                measurement.Row_Length = remove_first_word(line)         #
-          
+                key = "NUMBER_OF_SETS"
+            elif line.startswith("LGOROWLENGTH"):
+                measurement.Row_Length = remove_first_word(line)
+                key = "ROW_LENGTH"
+            else:
+                # print(line)
+                key = '# ' + get_first_word(line)
 
-            # if line.startswith("CREATOR") or line.startswith("ORIGINATOR"):
-            #     measurement.Originator = remove_first_word(line)
-            # elif line.startswith("CREATION_DATE") or line.startswith("CREATED"):
-            #     measurement.Creation_Date = remove_first_word(line)
-            # elif line.startswith("TARGET") or line.startswith("TARGET_NAME"):
-            #     measurement.Target_ID = remove_first_word(line)
-            # elif line.startswith("MANUFACTURER"):
-            #     measurement.Media_Manufacturer = remove_first_word(line)
-            # elif line.startswith("MATERIAL"):
-            #     measurement.Media_Material = remove_first_word(line)
-            # elif line.startswith("PROD_DATE") or line.startswith("CREATED"):
-            #     measurement.Media_Prod_Date = remove_first_word(line)
-            # elif line.startswith("SERIAL"):
-            #     measurement.Device_Serial_Number = remove_first_word(line)
-            # elif line.startswith("INSTRUMENTATION") or line.startswith("INSTRUMENT") or line.startswith("DEVICE"):
-            #     measurement.Device_Model = remove_first_word(line)
-            # elif line.startswith("SOFTWARE"):
-            #     measurement.Software = remove_first_word(line)
-            # elif line.startswith("COMMENT"):
-            #     measurement.Comment = remove_first_word(line)
-            # elif line.startswith("JOB_NAME") or line.startswith("JOB_ID"):
-            #     measurement.Measurement_Name = remove_first_word(line)
-            # elif line.startswith("DESCRIPTION"):
-            #     measurement.Description = remove_first_word(line)
-            # elif line.startswith("HEAT_PRESS_NAME"):
-            #     measurement.Heat_Press_Name = remove_first_word(line)
-            # elif line.startswith("HEAT_PRESS_TEMP"):
-            #     measurement.Heat_Press_Temp = remove_first_word(line)
-            # elif line.startswith("HEAT_PRESS_TIME"):
-            #     measurement.Heat_Press_Time = remove_first_word(line)
-            # elif line.startswith("PRINTER_NAME"):
-            #     measurement.Printer_Name = remove_first_word(line)
-            # elif line.startswith("INK_MANUFACTURER"):
-            #     measurement.Ink_Manufacturer = remove_first_word(line)
-            # elif line.startswith("INK_SET"):
-            #     measurement.Ink_Set = remove_first_word(line)
-            # elif line.startswith("INK_TYPE"):
-            #     measurement.Ink_Type = remove_first_word(line)
-            # elif line.startswith("SAMPLE_BACKING"):
-            #     measurement.Sample_Backing = remove_first_word(line)
-            # elif line.startswith("ILLUMINANT") or line.startswith("ILLUMINATION_NAME"):
-            #     measurement.Measurement_Illumination = remove_first_word(line)
-            # elif line.startswith("OBSERVER") or line.startswith("OBSERVER_ANGLE"):
-            #     measurement.Measurement_Angle = remove_first_word(line)
-            # elif line.startswith("NUMBER_OF_FIELDS"):
-            #     measurement.Number_Of_Fields = remove_first_word(line)
-            # elif line.startswith("NUMBER_OF_SETS"):
-            #     measurement.Number_Of_Sets = remove_first_word(line)
-            # elif line.startswith("LGOROWLENGTH"):
-            #     measurement.Row_Length = remove_first_word(line)
+            data_array = remove_first_word(line)
+            # data = replace_tabs_with_spaces(data)
+            # print (f"Key: {key}, Data: {data}")
+            keys_array.append(key)
+            values.append(data_array)
 
-            descriptive_lines.append(line)
+    dict(zip(keys_array, values))
 
         # Print the object as a dictionary
-        print(measurement.Originator)
-        print(measurement.to_dict())
-    return descriptive_lines
+        # print(measurement.Originator)
+        # print(measurement.to_dict())
+    return  dict(zip(keys_array, values))
 
 
 def extract_keys_and_data(file_path_local):
@@ -223,12 +285,13 @@ def extract_keys_and_data(file_path_local):
                 case "END_DATA":
                     is_parsing_data = False
                 case _ if is_parsing_keys:
-                    line = "Measurement_ID " + line
+                    line = "Measurement_ID: " + line
                     keys_local = line.split()
                 case _ if is_parsing_data:
                     line = measurement.Measurement_ID + " " + line
                     values = line.split()
-                    record = dict(zip(keys_local, values))
+                    record = convert_values(keys_local, values)
+                    # record = dict(zip(keys_local, values))
                     data_local.append(record)
 
     return keys_local, data_local
@@ -237,6 +300,7 @@ def extract_keys_and_data(file_path_local):
 def save_to_json(data_local, output_path):
     with open(output_path, 'w') as f:
         json.dump(data_local, f, indent=4)
+
     print(f"JSON data saved to {output_path}")
 
 
@@ -250,13 +314,18 @@ if __name__ == '__main__':
     )
 
     # parse descriptive lines
-    parse_descriptive_lines(file_path)
+    descriptive_data = parse_descriptive_lines(file_path)
 
     # Extract keys and data
-    keys, data = extract_keys_and_data(file_path)
+    keys, measurement_data = extract_keys_and_data(file_path)
+
+    data = {
+        "descriptive_data": descriptive_data,
+        "measurement_data": measurement_data
+    }
 
     # Save the data to JSON
     output_file = path + 'printerTest.output.json'
     save_to_json(data, output_file)
 
-    print(f"JSON data saved to {output_file}")
+
