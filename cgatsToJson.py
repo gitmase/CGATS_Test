@@ -1,7 +1,28 @@
 import json
 import uuid
+import os
+# -*- coding: utf-8 -*-
 
-
+# Converts a CGATS Color Data file to JSON format
+# This script reads the CGATS file, extracts measurement data and descriptive lines,
+# and saves the data to a JSON file.
+# The script uses the uuid module to generate a unique identifier for each measurement.
+# The script uses the json module to save the data in JSON format.
+# The script uses the os module to handle file paths.
+# The script defines a MeasurementData class to store measurement data.
+# The script defines several functions to process the CGATS file:
+# - remove_first_word: removes the first word from a line
+# - get_first_word: gets the first word from a line
+# - replace_tabs_with_spaces: replaces tabs with spaces in a line
+# - to_number: converts a string to a number (int or float)
+# - convert_array_values: converts an array of strings to numbers
+# - convert_values: converts a list of keys and values to a dictionary
+# - parse_descriptive_lines: parses the descriptive lines of the CGATS file
+# - extract_keys_and_data: extracts keys and data from the CGATS file
+# - save_to_json: saves the data to a JSON file
+# The script is designed to work with CGATS files that contain measurement data and descriptive lines.
+# The script is designed to be run as a standalone program.
+# The script is designed to be run in Python 3.x.
 
 class MeasurementData:
     # Measurement data class which will be stored as fields in a database table
@@ -89,7 +110,7 @@ def get_first_word(input_string: str) -> str:
             first, rest = input_string.split(split_char, 1)
             first =first.strip()
             # Remove trailing colon if present
-            first[:-1] if first.endswith(':') else first
+            first = first[:-1] if first.endswith(':') else first
 
         except ValueError:
             return None
@@ -327,5 +348,5 @@ if __name__ == '__main__':
     # Save the data to JSON
     output_file = path + 'printerTest.output.json'
     save_to_json(data, output_file)
-
-
+    # Save the data to JSON
+# End of script
