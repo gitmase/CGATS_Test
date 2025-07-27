@@ -1,1 +1,1 @@
-# CGATS_Test is a test or reading a basic cgats file
+# CGATS_Test is a test of a Python program that converts a cgats file to json. The CGATS file contains color data from a spectrophotometer reading.
