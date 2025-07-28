@@ -1,7 +1,10 @@
 import json
 import uuid
 import os
+import argparse
+import re
 from datetime import date
+
 
 # Version 1.3
 # -*- coding: utf-8 -*-
@@ -26,8 +29,19 @@ from datetime import date
 # The script is designed to work with CGATS files that contain measurement data and descriptive lines.
 # The script is designed to be run as a standalone program.
 # The script is designed to be run in Python 3.x.
+#
+# Updates
+# 27 Jul 2025 Version 1.3: 
+#     Added command line arguments 
+#     Added --debug and --verbose arguments
+#     Not useing MeasurementData Class which may be useful for database functionality
+#     Corrected some minor formating problems
+
+debug = False
+verbose = False
 
 class MeasurementData:
+    # This is not implemented yet
     # Measurement data class which will be stored as fields in a database table
     def __init__(self,
                  Measurement_ID=None,
@@ -81,9 +95,16 @@ class MeasurementData:
         self.Heat_Press_Name = Heat_Press_Name
         self.Data_Format = Data_Format
 
-    def to_dict(self):
-        """Convert the object to a dictionary."""
-        return self.__dict__
+
+def log(msg, verbose=False, debug=False):
+    if debug:
+        print(f"[DEBUG] {msg}")
+    elif verbose:
+        print(f"[INFO] {msg}")
+
+def to_dict(self):
+    # Convert the object to a dictionary.
+    return self.__dict__
 
 
 def remove_first_word(input_string):
@@ -126,48 +147,28 @@ def replace_tabs_with_spaces(input_string):
     return input_string.replace('\t', ' ')
 
 
-def to_number(s):
-    """Attempts to convert a string to an int or float. Returns None if invalid."""
-    try:
-        return int(s) if "." not in s else float(s)
-    except ValueError:
-        return None
-
-def convert_array_values(arr):
-    """Converts numeric strings in an array to int or float, leaving others unchanged."""
-    def convert(value):
-        if isinstance(value, (int, float)):  # Already a number
-            return value
-        if isinstance(value, str) and value.isdigit():  # Integer
-            return int(value)
-        try:
-            return float(value) if isinstance(value, str) and value.replace(".", "", 1).isdigit() else value
-        except ValueError:
-            return value  # Keep as is if not a valid number
-
-    return [convert(v) for v in arr]
-
-
 def convert_values(key_array, values):
     """Creates a dictionary from keys and values, converting numeric strings to numbers."""
-    def convert(value):
-        # Check if value is an integer
-        if value.isdigit():
-            return int(value)
-        # Check if value is a float
-        try:
-            return float(value) if "." in value and value.replace(".", "", 1).isdigit() else value
-        except ValueError:
-            return value  # Return as-is if not a number
+    def smart_convert(value):
+        float_pattern = re.compile(r'^[+-]?(?:\d+\.\d*|\.\d+|\d+\.)$')
+        int_pattern = re.compile(r'^[+-]?\d+$')
 
-    return dict(zip(key_array, (convert(v) for v in values)))
+        if isinstance(value, str):
+            value = value.strip()
+            if float_pattern.match(value):
+                return float(value)
+            elif int_pattern.match(value):
+                return int(value)
+        return value  # return as-is if not a convertible stringr
+
+    return dict(zip(key_array, (smart_convert(v) for v in values)))
 
 
-def parse_descriptive_lines(file_path_local):
-    # print(f"Reading file: {file_path_local}")
-    keys_array = ['Measurement_ID']
-    values=[measurement.Measurement_ID]
-    print(f"Test Measurement_ID: {measurement.Measurement_ID}")
+def parse_descriptive_lines(file_path_local,measurement_uuid):
+    log(f"Reading file: {file_path_local}",verbose,debug)
+    keys_array = ['MEASUREMENT_ID']
+    values = [measurement_uuid]
+    
     key = None
     today_str = date.today().isoformat()
     bdf = False
@@ -175,26 +176,23 @@ def parse_descriptive_lines(file_path_local):
         for line in file:
             line = line.strip().upper()
             if line.startswith("BEGIN_DATA_FORMAT"):
-                print(f"Skipping line bdf: {line}")
                 bdf = True
                 continue
             elif line.startswith("BEGIN"):
-                print(f"Skipping line: {line}")
                 break
             elif bdf:
                 line = replace_tabs_with_spaces(line)
-                measurement.Data_Format = line
+                # measurement.Data_Format = line
                 keys_array.append('DATA_FORMAT')
                 values.append(line)
                 bdf = False
-                print(f"Data format: {line}")
                 continue
             else:
                 try:
                     if remove_first_word(line) is None:
                         continue
                 except IndexError:
-                    # print(f"Error processing line: {line}")
+                    log(f"Error processing line: {line}",verbose,debug)
                     continue
             #
             if line.startswith(("CREATOR","ORIGINATOR")):
@@ -235,7 +233,7 @@ def parse_descriptive_lines(file_path_local):
                 # measurement.Description = remove_first_word(line)
                 key = "DESCRIPTION"
             elif line.startswith("HEAT_PRESS_NAME"):
-                measurement.Heat_Press_Name = remove_first_word(line)
+                # measurement.Heat_Press_Name = remove_first_word(line)
                 key = "HEAT_PRESS_NAME"
             elif line.startswith("HEAT_PRESS_TEMP"):
                 # measurement.Heat_Press_Temp = remove_first_word(line)
@@ -274,22 +272,22 @@ def parse_descriptive_lines(file_path_local):
                 # measurement.Row_Length = remove_first_word(line)
                 key = "ROW_LENGTH"
             else:
-                # print(line)
+                log(f"Line: (line)",verbose,debug)
                 key = '# ' + get_first_word(line)
-                print(f"Key: {key}")
+                log(f"Key: {key}",verbose,debug)
                 
             # all measurements (values) are defined by removing first word from line
-            measurement.key = remove_first_word(line)
-            # print(f"measurement.key: {key} - {measurement.key}")
+            data = remove_first_word(line)
+            log(f"measurement.key: {key} - {data} ",verbose,debug)
             
             if not key.startswith("#"):
               # data_array = remove_first_word(line)
-              # data = replace_tabs_with_spaces(data)
-              # print (f"Key: {key}, Data: {data}")
+              data = replace_tabs_with_spaces(data)
+              log(f"Key: {key}, Data: {data}",verbose,debug)
               keys_array.append(key)
-              values.append(remove_first_word(line))
+              values.append(data)
               
-    if measurement.Measurement_Date is None:
+    if "Measurement_Date" not in keys_array:
     	  key = "MEASUREMENT_DATE"
     	  keys_array.append(key)
     	  values.append(today_str)
@@ -302,7 +300,7 @@ def parse_descriptive_lines(file_path_local):
     return  dict(zip(keys_array, values))
 
 
-def extract_keys_and_data(file_path_local):
+def extract_keys_and_data(file_path_local,measurement_uuid):
     keys_local = []
     data_local = []
     is_parsing_keys = False
@@ -324,13 +322,14 @@ def extract_keys_and_data(file_path_local):
                 case "END_DATA":
                     is_parsing_data = False
                 case _ if is_parsing_keys:
-                    line = "Measurement_ID: " + line
+                    line = "MEASUREMENT_ID: " + line
                     keys_local = line.split()
                 case _ if is_parsing_data:
-                    line = measurement.Measurement_ID + " " + line
+                    line = measurement_uuid + " " + line
                     values = line.split()
                     record = convert_values(keys_local, values)
-                    # record = dict(zip(keys_local, values))
+                    log(f"Value: {values}",verbose,debug)
+                    
                     data_local.append(record)
 
     return keys_local, data_local
@@ -340,23 +339,46 @@ def save_to_json(data_local, output_path):
     with open(output_path, 'w') as f:
         json.dump(data_local, f, indent=4)
 
-    print(f"JSON data saved to {output_path}")
+    log(f"JSON data saved to {output_path}",verbose,debug)
+    
+    
+def main():
+    # Global Variables
+    global debug
+    debug = False
+    global verbose
+    verbose = False
 
+    parser = argparse.ArgumentParser(description="Process input and output files with a path.")
+    parser.add_argument("--path", default="/Users/aps/Docs/TestData/", help="The folder path (default: current directory)")
+    parser.add_argument("--input_file", default="printerTest.cie.txt", help="The input file name (default: input.txt)")
+    parser.add_argument("--output_file", default="printerTest.output.json", help="The output file name (default: output.txt)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 
-if __name__ == '__main__':
-    # Path to the uploaded file
-    path = '/Users/aps/Docs/TestData/'
-    file_path = path + 'printerTest.cie.txt'
+    args = parser.parse_args()
+    
+    if args.debug:
+        debug = True
+        print("Debug mode is ON")
+    
+    if args.verbose:
+        verbose = True
+        print("Verbose output enabled")
+        
 
-    measurement = MeasurementData(
-        Measurement_ID=str(uuid.uuid4())  # Generate a unique GUID
-    )
-
+    path = args.path
+    input_file = path + args.input_file
+    output_file = path + args.output_file
+    
+    measurement_uuid = str(uuid.uuid4())  # Generate a unique GUID
+    log(f"measurement_uuid: {measurement_uuid}",verbose,debug)
+    
     # parse descriptive lines
-    descriptive_data = parse_descriptive_lines(file_path)
+    descriptive_data = parse_descriptive_lines(input_file,measurement_uuid)
 
     # Extract keys and data
-    keys, measurement_data = extract_keys_and_data(file_path)
+    keys, measurement_data = extract_keys_and_data(input_file,measurement_uuid)
 
     data = {
         "descriptive_data": descriptive_data,
@@ -364,7 +386,16 @@ if __name__ == '__main__':
     }
 
     # Save the data to JSON
-    output_file = path + 'printerTest.output.json'
+    # output_file = path + 'printerTest.output.json'
     save_to_json(data, output_file)
     # Save the data to JSON
+    
+    
+    log("End of Program",verbose,debug)
+
+
+if __name__ == '__main__':
+    main()
+    
+
 # End of script
