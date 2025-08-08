@@ -37,8 +37,8 @@ from datetime import date
 #     Not useing MeasurementData Class which may be useful for database functionality
 #     Corrected some minor formating problems
 
-debug = False
-verbose = False
+# vdebug = False
+# verbose = False
 
 class MeasurementData:
     # This is not implemented yet
