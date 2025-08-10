@@ -1,3 +1,4 @@
+# Obsolete file - use loadJson.py instead
 import json
 import uuid
 import logging
