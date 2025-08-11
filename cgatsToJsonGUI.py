@@ -13,14 +13,16 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk
+import tkinter.font as tkfont
+from tkinter import filedialog, messagebox
 
 
 # Converts a CGATS Color Data file to JSON format
 # With GUI
 # JSON file will be used to load data into Postgres database
 #
-# Version 2.0.0 - 10 Aug 2025
+# Version 2.0.1 - 10 Aug 2025
 #   TKinter GUI application
 #   Refactored for clarity and maintainability
 #   Added --compact option for compact JSON output
@@ -28,7 +30,13 @@ from tkinter import ttk, filedialog, messagebox
 #   Added default values for PROJECT and TEMPLATE fields
 #   Enhanced error handling and reporting
 #   Improved parsing logic for robustness
-#   Eliminated descriptive data that is included in the template table in the database
+#   Descriptive data that is included in the template table in the database will now be included in the JSON output
+#   Added filename sanitization and overwrite handling
+#   Added user preferences persistence
+#   Added description field handling
+#   Improved GUI layout and usability
+#   Added comments and documentation
+#   Added logging to file and console
 
 # ----------------------------
 # Parsing / Conversion Logic
@@ -329,7 +337,26 @@ class App(tk.Tk):
         ttk.Label(form, text="Measurement Date (YYYY-MM-DD):").grid(row=2, column=0, sticky="e", padx=(0, 8), pady=6)
         self.mdate_var = tk.StringVar(value=self._prefs_loaded.get("measurement_date", date.today().isoformat()))
         ttk.Entry(form, textvariable=self.mdate_var, width=20).grid(row=2, column=1, sticky="w", padx=(0, 8), pady=6)
+        # Description (new)
+        ttk.Label(form, text="Description:").grid(row=3, column=0, sticky="e", padx=(0, 8), pady=6)
+        self.remember_desc_start = bool(self._prefs_loaded.get("remember_description", False))
+        self.desc_var = tk.StringVar(value=(self._prefs_loaded.get("description", "") if self.remember_desc_start else ""))
+        ttk.Entry(form, textvariable=self.desc_var, width=50).grid(row=3, column=1, sticky="we", padx=(0, 8), pady=6)
+        # Status label for Description source (new)
+        self.desc_status = ttk.Label(form, text="", style="Note.TLabel")
+        self.desc_status.grid(row=4, column=1, sticky="w", padx=(0, 8), pady=(0, 6))
         form.columnconfigure(1, weight=1)
+
+        # Reusable italic gray note style (new)
+        try:
+            self.note_font = tkfont.nametofont("TkDefaultFont").copy()
+            self.note_font.configure(slant="italic")
+            self.note_style = ttk.Style(self)
+            self.note_style.configure("Note.TLabel", foreground="gray50", font=self.note_font)
+        except Exception:
+            self.note_style = ttk.Style(self)
+            self.note_style.configure("Note.TLabel", foreground="gray50")
+
 
         # File selectors
         filebox = ttk.LabelFrame(outer, text="Files", padding=12)
@@ -358,6 +385,7 @@ class App(tk.Tk):
         ttk.Label(eff_row, text="Will save to:").pack(side="left")
         self.eff_path_var = tk.StringVar(value=str(self.output_path))
         self.eff_label = ttk.Label(eff_row, textvariable=self.eff_path_var, justify="left")
+        self.eff_label.configure(style="Note.TLabel")
         self.eff_label.pack(side="left", padx=8, fill="x", expand=True)
 
         def update_wraplength(event=None):
@@ -380,10 +408,37 @@ class App(tk.Tk):
         opts.pack(fill="x", pady=(0, 12))
         self.compact_var = tk.BooleanVar(value=bool(self._prefs_loaded.get("compact", False)))
         ttk.Checkbutton(opts, text="Compact JSON", variable=self.compact_var).pack(anchor="w")
+        
+        # Compact JSON note (new)
+        self.compact_note = ttk.Label(opts, text="Compact JSON removes extra spaces to reduce file size.", style="Note.TLabel")
+        
+        def _update_compact_note(*_args):
+            try:
+                if bool(self.compact_var.get()):
+                    # show
+                    try:
+                        self.compact_note.pack_forget()
+                    except Exception:
+                        pass
+                    self.compact_note.pack(anchor="w", padx=(24, 0))
+                else:
+                    # hide
+                    self.compact_note.pack_forget()
+            except Exception:
+                pass
+        _update_compact_note()
+        try:
+            self.compact_var.trace_add("write", lambda *_: _update_compact_note())
+        except Exception:
+            pass
         self.replace_all_var = tk.BooleanVar(value=False)  # session-only
         ttk.Checkbutton(opts, text="Replace existing files without prompting (this session)", variable=self.replace_all_var).pack(anchor="w")
 
-        # Actions
+        
+        # Persist Description preference (new)
+        self.remember_desc_var = tk.BooleanVar(value=bool(self._prefs_loaded.get("remember_description", False)))
+        ttk.Checkbutton(opts, text="Remember the description", variable=self.remember_desc_var).pack(anchor="w")
+# Actions
         actions = ttk.Frame(outer); actions.pack(fill="x", pady=(8, 0))
         ttk.Button(actions, text="Process", command=self.process).pack(side="right")
         ttk.Button(actions, text="Quit", command=self._on_close).pack(side="right", padx=(0, 8))
@@ -474,6 +529,12 @@ class App(tk.Tk):
                     target_path = new_path
                     self.eff_path_var.set(str(target_path))
 
+                # Clear Description status (new)
+        try:
+            self.desc_status.config(text="")
+        except Exception:
+            pass
+
         # Read & parse
         try:
             text = self.input_path.read_text(encoding="utf-8", errors="replace")
@@ -490,6 +551,17 @@ class App(tk.Tk):
             messagebox.showerror("Parse error", f"Failed to parse CGATS file:\n{e}")
             return
 
+        # Prefill Description from parsed file if present (new)
+        try:
+            parsed_desc = (result.descriptive.get("DESCRIPTION") or "").strip()
+            if parsed_desc:
+                self.desc_var.set(parsed_desc)
+                try:
+                    self.desc_status.config(text="Description loaded from file")
+                except Exception:
+                    pass
+        except Exception:
+            pass
         measurement_uuid = str(uuid.uuid4())
         desc = result.descriptive
         desc.setdefault("MEASUREMENT_ID", measurement_uuid)
@@ -499,7 +571,16 @@ class App(tk.Tk):
         desc.setdefault("PROJECT", project if project else "NONE")
         desc.setdefault("TEMPLATE", template if template else "NONE")
         desc["MEASUREMENT_DATE"] = mdate
-
+        # Include Description in descriptive data (new)
+        try:
+            desc_val = (self.desc_var.get() or "").strip()
+        except Exception:
+            desc_val = ""
+        if desc_val:
+            desc["DESCRIPTION"] = desc_val
+        else:
+            # Keep parsed DESCRIPTION if present; otherwise default to NONE
+            desc.setdefault("DESCRIPTION", "NONE")
         payload = to_json(desc, result.rows, measurement_uuid)
         indent = None if self.compact_var.get() else 2
 
@@ -520,6 +601,14 @@ class App(tk.Tk):
             "output_filename": self.output_filename,
             "compact": bool(self.compact_var.get()),
         }
+        # Remember Description handling (new)
+        prefs["remember_description"] = bool(self.remember_desc_var.get())
+        if prefs["remember_description"]:
+            prefs["description"] = self.desc_var.get()
+        else:
+            # ensure we don't persist a stale description
+            if "description" in prefs:
+                del prefs["description"]
         save_prefs_json(self.prefs_path, prefs)
 
         messagebox.showinfo("Done", f"Wrote JSON to:\n{target_path}")
@@ -535,6 +624,12 @@ class App(tk.Tk):
             "output_filename": self.output_filename,
             "compact": bool(self.compact_var.get()),
         }
+        # Remember Description handling (new)
+        prefs["remember_description"] = bool(self.remember_desc_var.get())
+        if prefs["remember_description"]:
+            prefs["description"] = self.desc_var.get()
+        else:
+            prefs.pop("description", None)
         save_prefs_json(self.prefs_path, prefs)
         self.destroy()
 
