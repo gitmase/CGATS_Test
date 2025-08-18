@@ -1,4 +1,3 @@
-\
 from __future__ import annotations
 
 import json
@@ -11,6 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
+import argparse
 
 import tkinter as tk
 from tkinter import ttk
@@ -22,21 +22,13 @@ from tkinter import filedialog, messagebox
 # With GUI
 # JSON file will be used to load data into Postgres database
 #
-# Version 2.0.1 - 10 Aug 2025
-#   TKinter GUI application
-#   Refactored for clarity and maintainability
-#   Added --compact option for compact JSON output
-#   Improved logging configuration
-#   Added default values for PROJECT and TEMPLATE fields
-#   Enhanced error handling and reporting
-#   Improved parsing logic for robustness
-#   Descriptive data that is included in the template table in the database will now be included in the JSON output
-#   Added filename sanitization and overwrite handling
-#   Added user preferences persistence
-#   Added description field handling
-#   Improved GUI layout and usability
-#   Added comments and documentation
-#   Added logging to file and console
+# Version 2.1.0 - 16 Aug 2025
+#   - Cross-platform ttk styling
+#   - Primary/Danger/Secondary button styles
+#   - Helpers: make_primary_button, make_danger_button, make_secondary_button, make_button
+#   - Bold Navy header and labels
+#   - --nogui CLI mode with filename controls and compact option
+#   - Preferences persistence & improved UX
 
 # ----------------------------
 # Parsing / Conversion Logic
@@ -63,7 +55,9 @@ def iter_nonempty_lines(text: Iterable[str]) -> Iterable[str]:
             yield line
 
 
-def parse_descriptive_and_formats(lines: Iterable[str], logger: logging.Logger) -> Tuple[Dict[str, str], List[str], List[str]]:
+def parse_descriptive_and_formats(
+    lines: Iterable[str], logger: logging.Logger
+) -> Tuple[Dict[str, str], List[str], List[str]]:
     descriptive: Dict[str, str] = {}
     keys: List[str] = []
     buffer_after_begin_data: List[str] = []
@@ -113,7 +107,9 @@ def parse_descriptive_and_formats(lines: Iterable[str], logger: logging.Logger) 
     return descriptive, keys, buffer_after_begin_data
 
 
-def parse_rows(after_begin_data_lines: List[str], keys: List[str], logger: logging.Logger) -> List[Dict[str, str]]:
+def parse_rows(
+    after_begin_data_lines: List[str], keys: List[str], logger: logging.Logger
+) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
     for line in after_begin_data_lines:
         u = line.strip()
@@ -127,7 +123,9 @@ def parse_rows(after_begin_data_lines: List[str], keys: List[str], logger: loggi
 
         cols = u.split()
         if len(cols) != len(keys):
-            logger.warning("Row has %d cols but %d keys. Row: %r", len(cols), len(keys), u)
+            logger.warning(
+                "Row has %d cols but %d keys. Row: %r", len(cols), len(keys), u
+            )
         if len(cols) < len(keys):
             cols.extend([""] * (len(keys) - len(cols)))
         elif len(cols) > len(keys):
@@ -139,7 +137,9 @@ def parse_rows(after_begin_data_lines: List[str], keys: List[str], logger: loggi
 
 
 def parse_cgats_text(text: str, logger: logging.Logger) -> ParseResult:
-    descriptive, keys, after_begin_data = parse_descriptive_and_formats(text.splitlines(), logger)
+    descriptive, keys, after_begin_data = parse_descriptive_and_formats(
+        text.splitlines(), logger
+    )
 
     if not keys:
         logger.debug("No keys found; attempting to infer from first data line.")
@@ -196,6 +196,313 @@ def save_prefs_json(path: Path, prefs: dict) -> None:
         path.write_text(json.dumps(prefs, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as e:
         print(f"Warning: could not save prefs: {e}", file=sys.stderr)
+
+
+
+# ----------------------------
+# Cross-platform ttk style helper
+# ----------------------------
+
+def init_cross_platform_styles(root: tk.Misc) -> None:
+    """Select a theme that respects colors on each OS and define styled buttons + labels."""
+    style = ttk.Style(root)
+
+    plat = sys.platform
+    # Choose a theme that honors color maps
+    if plat.startswith("win"):
+        for th in ("vista", "xpnative", "clam", style.theme_use()):
+            if th in style.theme_names():
+                style.theme_use(th)
+                break
+    elif plat == "darwin":
+        # macOS aqua ignores many custom colors; clam respects them
+        if "clam" in style.theme_names():
+            style.theme_use("clam")
+    else:
+        if "clam" in style.theme_names():
+            style.theme_use("clam")
+
+    # Primary (Blue) style
+    style.configure(
+        "Blue.TButton",
+        foreground="white",
+        background="#0074D9",
+        borderwidth=1,
+        focusthickness=0,
+        padding=(10, 6),
+    )
+    style.map(
+        "Blue.TButton",
+        background=[("active", "#005fa3"), ("pressed", "#005fa3"), ("disabled", "#d0d0d0")],
+        foreground=[("disabled", "#8a8a8a")],
+        relief=[("pressed", "sunken"), ("!pressed", "raised")],
+    )
+
+    # Danger (Red) style
+    style.configure(
+        "Red.TButton",
+        foreground="white",
+        background="#DC143C",   # crimson
+        borderwidth=1,
+        focusthickness=0,
+        padding=(10, 6),
+    )
+    style.map(
+        "Red.TButton",
+        background=[("active", "#B22222"), ("pressed", "#A61B1B"), ("disabled", "#d0d0d0")],
+        foreground=[("disabled", "#8a8a8a")],
+        relief=[("pressed", "sunken"), ("!pressed", "raised")],
+    )
+
+    # Secondary (pastel yellow, bold black, slightly larger)
+    try:
+        sec_font = tkfont.nametofont("TkDefaultFont").copy()
+        sec_font.configure(weight="bold", size=11)
+    except Exception:
+        sec_font = ("Segoe UI", 11, "bold")
+
+    style.configure(
+        "Secondary.TButton",
+        foreground="#000000",
+        background="#FFF066",   # pastel yellow
+        font=sec_font,
+        borderwidth=1,
+        focusthickness=0,
+        padding=(10, 6),
+    )
+    style.map(
+        "Secondary.TButton",
+        background=[("active", "#FFE440"), ("pressed", "#FFD933"), ("disabled", "#e6e6e6")],
+        foreground=[("disabled", "#7a7a7a")],
+        relief=[("pressed", "sunken"), ("!pressed", "raised")],
+    )
+
+    # Label styles: bold Navy for headers and all labels
+    try:
+        base_lbl_font = tkfont.nametofont("TkDefaultFont").copy()
+    except Exception:
+        base_lbl_font = ("Segoe UI", 10)
+    try:
+        base_lbl_font.configure(weight="bold")
+    except Exception:
+        pass
+
+    NAVY = "#003366"  # slightly brighter than #001f3f
+
+    style.configure("BoldNavy.TLabel", foreground=NAVY, font=base_lbl_font)
+    style.configure("TLabelframe.Label", foreground=NAVY, font=base_lbl_font)
+
+    try:
+        header_font = tkfont.nametofont("TkDefaultFont").copy()
+        header_font.configure(size=18, weight="bold")
+    except Exception:
+        header_font = ("Segoe UI", 18, "bold")
+    style.configure("HeaderNavy.TLabel", foreground=NAVY, font=header_font)
+
+    # If the active theme is still aqua, adjust so it looks reasonable
+    if style.theme_use() == "aqua":
+        style.configure(
+            "Blue.TButton",
+            relief="flat",
+            foreground="white",
+            padding=(12, 8),
+        )
+        style.map(
+            "Blue.TButton",
+            foreground=[("disabled", "#8a8a8a")],
+            relief=[("pressed", "sunken"), ("active", "flat")],
+        )
+        style.configure(
+            "Red.TButton",
+            relief="flat",
+            foreground="white",
+            padding=(12, 8),
+        )
+        style.map(
+            "Red.TButton",
+            foreground=[("disabled", "#8a8a8a")],
+            relief=[("pressed", "sunken"), ("active", "flat")],
+        )
+        style.configure(
+            "Secondary.TButton",
+            relief="flat",
+            foreground="#000000",
+            padding=(12, 8),
+        )
+        style.map(
+            "Secondary.TButton",
+            foreground=[("disabled", "#7a7a7a")],
+            relief=[("pressed", "sunken"), ("active", "flat")],
+        )
+        # Ensure Navy label styles also apply under aqua
+        try:
+            base_lbl_font_aqua = tkfont.nametofont("TkDefaultFont").copy()
+            base_lbl_font_aqua.configure(weight="bold")
+        except Exception:
+            base_lbl_font_aqua = ("Helvetica", 12, "bold")
+        style.configure("BoldNavy.TLabel", foreground="#001f3f", font=base_lbl_font_aqua)
+        style.configure("TLabelframe.Label", foreground="#001f3f", font=base_lbl_font_aqua)
+        try:
+            header_font_aqua = tkfont.nametofont("TkDefaultFont").copy()
+            header_font_aqua.configure(size=18, weight="bold")
+        except Exception:
+            header_font_aqua = ("Helvetica", 18, "bold")
+        style.configure("HeaderNavy.TLabel", foreground="#001f3f", font=header_font_aqua)
+
+
+# ----------------------------
+# Button helpers
+# ----------------------------
+
+def make_primary_button(parent, text: str, command=None, **pack_kwargs):
+    """Primary action button (Blue)."""
+    btn = ttk.Button(parent, text=text, command=command, style="Blue.TButton")
+    if pack_kwargs:
+        btn.pack(**pack_kwargs)
+    return btn
+
+def make_danger_button(parent, text: str, command=None, **pack_kwargs):
+    """Destructive/exit action (Red)."""
+    btn = ttk.Button(parent, text=text, command=command, style="Red.TButton")
+    if pack_kwargs:
+        btn.pack(**pack_kwargs)
+    return btn
+
+def make_secondary_button(parent, text: str, command=None, **pack_kwargs):
+    """Secondary/supporting action (pastel yellow)."""
+    btn = ttk.Button(parent, text=text, command=command, style="Secondary.TButton")
+    if pack_kwargs:
+        btn.pack(**pack_kwargs)
+    return btn
+
+def make_button(parent, text: str, command=None, variant: str = "primary", **pack_kwargs):
+    """
+    General factory for styled buttons.
+      - variant: "primary" (blue), "danger" (red), "secondary" (pastel yellow)
+    Any pack kwargs are passed to .pack().
+    """
+    style_map = {
+        "primary": "Blue.TButton",
+        "danger": "Red.TButton",
+        "secondary": "Secondary.TButton",
+    }
+    style = style_map.get(variant.lower(), style_map["primary"])
+    btn = ttk.Button(parent, text=text, command=command, style=style)
+    if pack_kwargs:
+        btn.pack(**pack_kwargs)
+    return btn
+
+
+# ----------------------------
+# CLI (headless) argument parsing and runner
+# ----------------------------
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="CGATS → JSON converter with optional GUI (--nogui for headless)"
+    )
+    parser.add_argument("--nogui", action="store_true", help="Run in headless mode (no Tk GUI)")
+    # Headless options (used when --nogui is supplied)
+    parser.add_argument("-i", "--input", help="Path to CGATS input file")
+    parser.add_argument("-o", "--output-dir", default="", help="Directory to write JSON (default: alongside input)")
+    parser.add_argument("--project", default="", help="Project name")
+    parser.add_argument("--template", default="", help="Template name")
+    parser.add_argument("--measurement", default="", help="Measurement name")
+    parser.add_argument("--measurement-date", default="", help="YYYY-MM-DD; default=today")
+    parser.add_argument("--description", default="", help="Optional description")
+    parser.add_argument("--compact", action="store_true", help="Write compact JSON (no spaces)")
+    parser.add_argument("--save-as", default="", help="Optional output filename (will be sanitized); if omitted, derived from input")
+    parser.add_argument("--replace", action="store_true", help="Overwrite existing files without auto-incrementing")
+    return parser
+
+
+def run_headless(args: argparse.Namespace) -> int:
+    """Perform CGATS→JSON conversion without launching the GUI."""
+    # Validate input
+    if not args.input:
+        print("--input is required when using --nogui", file=sys.stderr)
+        return 2
+    inp = Path(args.input).expanduser().resolve()
+    if not inp.exists():
+        print(f"Input file not found: {inp}", file=sys.stderr)
+        return 2
+
+    # Determine output directory
+    out_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else inp.parent
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"Could not create output directory: {e}", file=sys.stderr)
+        return 1
+
+    # Read input
+    try:
+        text = inp.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        print(f"Could not read input file: {e}", file=sys.stderr)
+        return 1
+
+    logger = logging.getLogger("cgats2json.nogui")
+    logger.setLevel(logging.INFO)
+
+    try:
+        result = parse_cgats_text(text, logger=logger)
+    except Exception as e:
+        print(f"Failed to parse CGATS file: {e}", file=sys.stderr)
+        return 1
+
+    # Build descriptive block
+    desc = dict(result.descriptive)
+    mdate = (args.measurement_date or "").strip() or date.today().isoformat()
+    # Validate date
+    try:
+        datetime.strptime(mdate, "%Y-%m-%d")
+    except ValueError:
+        print("Invalid --measurement-date, expected YYYY-MM-DD", file=sys.stderr)
+        return 2
+
+    project = (args.project or "NONE").strip() or "NONE"
+    template = (args.template or "NONE").strip() or "NONE"
+    measurement = (args.measurement or "NONE").strip() or "NONE"
+
+    desc.setdefault("PROJECT", project)
+    desc.setdefault("TEMPLATE", template)
+    desc.setdefault("MEASUREMENT", measurement)
+    desc["MEASUREMENT_DATE"] = mdate
+
+    if (args.description or "").strip():
+        desc["DESCRIPTION"] = args.description.strip()
+    else:
+        desc.setdefault("DESCRIPTION", "NONE")
+
+    measurement_uuid = str(uuid.uuid4())
+    desc.setdefault("MEASUREMENT_ID", measurement_uuid)
+    desc.setdefault("PARSED_DATE", date.today().isoformat())
+
+    payload = to_json(desc, result.rows, measurement_uuid)
+
+    # Determine filename
+    if (args.save_as or "").strip():
+        base_name = args.save_as.strip()
+    else:
+        today_str = date.today().isoformat()
+        base_name = f"{inp.stem}_{today_str}.json"
+    clean_name, _modified, _reason = sanitize_filename(base_name)
+    out_path = out_dir / clean_name
+
+    if out_path.exists() and not args.replace:
+        out_path = next_available_path(out_path)
+
+    indent = None if args.compact else 2
+    try:
+        out_path.write_text(json.dumps(payload, indent=indent, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        print(f"Could not write output file: {e}", file=sys.stderr)
+        return 1
+
+    # Print path for convenience in scripts
+    print(str(out_path))
+    return 0
 
 
 # ----------------------------
@@ -272,8 +579,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Color Data Measurement Processor")
-        self.geometry("820x620")
-        self.minsize(800, 580)
+        self.geometry("820x640")
+        self.minsize(820, 640)
 
         # Paths / prefs
         self.startup_dir = Path.cwd()
@@ -319,73 +626,80 @@ class App(tk.Tk):
         outer.pack(fill="both", expand=True)
 
         # Header
-        header = ttk.Label(outer, text="Color Data Measurement Processor", font=("Segoe UI", 18, "bold"))
+        header = ttk.Label(outer, text="Color Data Measurement Processor", style="HeaderNavy.TLabel")
         header.pack(anchor="w", pady=(0, 12))
 
         # Form grid
         form = ttk.Frame(outer)
         form.pack(fill="x", pady=(0, 12))
 
-        ttk.Label(form, text="Project:").grid(row=0, column=0, sticky="e", padx=(0, 8), pady=6)
+        ttk.Label(form, text="Project:", style="BoldNavy.TLabel").grid(row=0, column=0, sticky="e", padx=(0, 8), pady=6)
         self.project_var = tk.StringVar(value=self._prefs_loaded.get("project", ""))
         ttk.Entry(form, textvariable=self.project_var, width=50).grid(row=0, column=1, sticky="we", padx=(0, 8), pady=6)
 
-        ttk.Label(form, text="Template:").grid(row=1, column=0, sticky="e", padx=(0, 8), pady=6)
+        ttk.Label(form, text="Template:", style="BoldNavy.TLabel").grid(row=1, column=0, sticky="e", padx=(0, 8), pady=6)
         self.template_var = tk.StringVar(value=self._prefs_loaded.get("template", ""))
         ttk.Entry(form, textvariable=self.template_var, width=50).grid(row=1, column=1, sticky="we", padx=(0, 8), pady=6)
 
-        ttk.Label(form, text="Measurement Date (YYYY-MM-DD):").grid(row=2, column=0, sticky="e", padx=(0, 8), pady=6)
+        ttk.Label(form, text="Measurement:", style="BoldNavy.TLabel").grid(row=2, column=0, sticky="e", padx=(0, 8), pady=6)
+        self.measurement_var = tk.StringVar(value=self._prefs_loaded.get("measurement", ""))
+        ttk.Entry(form, textvariable=self.measurement_var, width=50).grid(row=2, column=1, sticky="we", padx=(0, 8), pady=6)
+
+        ttk.Label(form, text="Measurement Date (YYYY-MM-DD):", style="BoldNavy.TLabel").grid(row=3, column=0, sticky="e", padx=(0, 8), pady=6)
         self.mdate_var = tk.StringVar(value=self._prefs_loaded.get("measurement_date", date.today().isoformat()))
-        ttk.Entry(form, textvariable=self.mdate_var, width=20).grid(row=2, column=1, sticky="w", padx=(0, 8), pady=6)
-        # Description (new)
-        ttk.Label(form, text="Description:").grid(row=3, column=0, sticky="e", padx=(0, 8), pady=6)
+        ttk.Entry(form, textvariable=self.mdate_var, width=20).grid(row=3, column=1, sticky="w", padx=(0, 8), pady=6)
+        # Description
+        ttk.Label(form, text="Description:", style="BoldNavy.TLabel").grid(row=4, column=0, sticky="e", padx=(0, 8), pady=6)
         self.remember_desc_start = bool(self._prefs_loaded.get("remember_description", False))
         self.desc_var = tk.StringVar(value=(self._prefs_loaded.get("description", "") if self.remember_desc_start else ""))
-        ttk.Entry(form, textvariable=self.desc_var, width=50).grid(row=3, column=1, sticky="we", padx=(0, 8), pady=6)
-        # Status label for Description source (new)
+        ttk.Entry(form, textvariable=self.desc_var, width=50).grid(row=4, column=1, sticky="we", padx=(0, 8), pady=6)
+        # Status label for Description source
         self.desc_status = ttk.Label(form, text="", style="Note.TLabel")
         self.desc_status.grid(row=4, column=1, sticky="w", padx=(0, 8), pady=(0, 6))
         form.columnconfigure(1, weight=1)
 
-        # Reusable italic gray note style (new)
+        # Reusable bold italic Navy note style
         try:
             self.note_font = tkfont.nametofont("TkDefaultFont").copy()
-            self.note_font.configure(slant="italic")
+            self.note_font.configure(weight="bold", slant="italic")
             self.note_style = ttk.Style(self)
-            self.note_style.configure("Note.TLabel", foreground="gray50", font=self.note_font)
+            self.note_style.configure("Note.TLabel", foreground="#001f3f", font=self.note_font)
         except Exception:
             self.note_style = ttk.Style(self)
-            self.note_style.configure("Note.TLabel", foreground="gray50")
-
+            try:
+                self.note_font = tkfont.nametofont("TkDefaultFont").copy()
+                self.note_font.configure(weight="bold", slant="italic")
+                self.note_style.configure("Note.TLabel", foreground="#001f3f", font=self.note_font)
+            except Exception:
+                self.note_style.configure("Note.TLabel", foreground="#001f3f")
 
         # File selectors
         filebox = ttk.LabelFrame(outer, text="Files", padding=12)
         filebox.pack(fill="x", pady=(0, 12))
 
         in_row = ttk.Frame(filebox); in_row.pack(fill="x", pady=6)
-        ttk.Label(in_row, text="Input CGATS file:").pack(side="left")
+        ttk.Label(in_row, text="Input CGATS file:", style="BoldNavy.TLabel").pack(side="left")
         self.input_var = tk.StringVar(value=str(self.input_path) if self.input_path else "(none)")
-        self.input_label = ttk.Label(in_row, textvariable=self.input_var, justify="left")
+        self.input_label = ttk.Label(in_row, textvariable=self.input_var, justify="left", style="BoldNavy.TLabel")
         self.input_label.pack(side="left", padx=8, fill="x", expand=True)
-        ttk.Button(in_row, text="Choose...", command=self.choose_input).pack(side="right")
+        make_button(in_row, "Choose...", self.choose_input, variant="secondary", side="right")
 
         folder_row = ttk.Frame(filebox); folder_row.pack(fill="x", pady=6)
-        ttk.Label(folder_row, text="Output folder:").pack(side="left")
+        ttk.Label(folder_row, text="Output folder:", style="BoldNavy.TLabel").pack(side="left")
         self.folder_var = tk.StringVar(value=str(self.output_folder))
-        self.folder_label = ttk.Label(folder_row, textvariable=self.folder_var, justify="left")
+        self.folder_label = ttk.Label(folder_row, textvariable=self.folder_var, justify="left", style="BoldNavy.TLabel")
         self.folder_label.pack(side="left", padx=8, fill="x", expand=True)
-        ttk.Button(folder_row, text="Choose folder...", command=self.choose_output_folder).pack(side="right")
+        make_button(folder_row, "Choose folder...", self.choose_output_folder, variant="secondary", side="right")
 
         fname_row = ttk.Frame(filebox); fname_row.pack(fill="x", pady=6)
-        ttk.Label(fname_row, text="Output filename (.json):").pack(side="left")
+        ttk.Label(fname_row, text="Output filename (.json):", style="BoldNavy.TLabel").pack(side="left")
         self.filename_var = tk.StringVar(value=self.output_filename)
         ttk.Entry(fname_row, textvariable=self.filename_var, width=50).pack(side="left", padx=8, fill="x", expand=True)
 
         eff_row = ttk.Frame(filebox); eff_row.pack(fill="x", pady=6)
-        ttk.Label(eff_row, text="Will save to:").pack(side="left")
+        ttk.Label(eff_row, text="Will save to:", style="BoldNavy.TLabel").pack(side="left")
         self.eff_path_var = tk.StringVar(value=str(self.output_path))
-        self.eff_label = ttk.Label(eff_row, textvariable=self.eff_path_var, justify="left")
-        self.eff_label.configure(style="Note.TLabel")
+        self.eff_label = ttk.Label(eff_row, textvariable=self.eff_path_var, justify="left", style="BoldNavy.TLabel")
         self.eff_label.pack(side="left", padx=8, fill="x", expand=True)
 
         def update_wraplength(event=None):
@@ -408,21 +722,19 @@ class App(tk.Tk):
         opts.pack(fill="x", pady=(0, 12))
         self.compact_var = tk.BooleanVar(value=bool(self._prefs_loaded.get("compact", False)))
         ttk.Checkbutton(opts, text="Compact JSON", variable=self.compact_var).pack(anchor="w")
-        
-        # Compact JSON note (new)
+
+        # Compact JSON note
         self.compact_note = ttk.Label(opts, text="Compact JSON removes extra spaces to reduce file size.", style="Note.TLabel")
-        
+
         def _update_compact_note(*_args):
             try:
                 if bool(self.compact_var.get()):
-                    # show
                     try:
                         self.compact_note.pack_forget()
                     except Exception:
                         pass
                     self.compact_note.pack(anchor="w", padx=(24, 0))
                 else:
-                    # hide
                     self.compact_note.pack_forget()
             except Exception:
                 pass
@@ -431,17 +743,20 @@ class App(tk.Tk):
             self.compact_var.trace_add("write", lambda *_: _update_compact_note())
         except Exception:
             pass
+
         self.replace_all_var = tk.BooleanVar(value=False)  # session-only
         ttk.Checkbutton(opts, text="Replace existing files without prompting (this session)", variable=self.replace_all_var).pack(anchor="w")
 
-        
-        # Persist Description preference (new)
+        # Persist Description preference
         self.remember_desc_var = tk.BooleanVar(value=bool(self._prefs_loaded.get("remember_description", False)))
         ttk.Checkbutton(opts, text="Remember the description", variable=self.remember_desc_var).pack(anchor="w")
-# Actions
+
+        # Actions
         actions = ttk.Frame(outer); actions.pack(fill="x", pady=(8, 0))
-        ttk.Button(actions, text="Process", command=self.process).pack(side="right")
-        ttk.Button(actions, text="Quit", command=self._on_close).pack(side="right", padx=(0, 8))
+        init_cross_platform_styles(self)
+        # Pack Quit first so it ends up at the far right when using side="right"
+        self.quit_btn    = make_button(actions, "Quit",    self._on_close, variant="danger",  side="right", padx=(0, 8))
+        self.process_btn = make_button(actions, "Process", self.process,   variant="primary", side="right")
 
         def on_filename_change(*args):
             self.output_filename = self.filename_var.get().strip()
@@ -452,13 +767,28 @@ class App(tk.Tk):
             self.eff_path_var.set(str(self.output_path))
         self.filename_var.trace_add("write", lambda *a: on_filename_change())
 
+        # Keyboard shortcuts
+        try:
+            # Enter/Return triggers Process
+            self.bind_all("<Return>", lambda e: self.process())
+            # Esc triggers Quit
+            self.bind_all("<Escape>", lambda e: self._on_close())
+            # Cmd+Q on macOS, Ctrl+Q elsewhere
+            self.bind_all("<Command-q>", lambda e: self._on_close())
+            self.bind_all("<Control-q>", lambda e: self._on_close())
+        except Exception:
+            pass
+
     # File dialogs
     def choose_input(self):
         initial = self.output_folder if self.output_folder.exists() else self.startup_dir
         path = filedialog.askopenfilename(
             title="Select CGATS File",
             initialdir=str(initial),
-            filetypes=[("CGATS / Text", "*.txt *.cgats *.cie *.cxf *.txf *.it8 *.itx *.sp"), ("All files", "*.*")],
+            filetypes=[
+                ("CGATS / Text", "*.txt *.cgats *.cie *.cxf *.txf *.it8 *.itx *.sp"),
+                ("All files", "*.*")
+            ],
         )
         if path:
             self.input_path = Path(path)
@@ -513,8 +843,7 @@ class App(tk.Tk):
         # Overwrite handling
         if target_path.exists():
             if self.replace_all_var.get():
-                # proceed without prompting
-                pass
+                pass  # proceed without prompting
             else:
                 overwrite = messagebox.askyesno(
                     "File exists",
@@ -529,7 +858,7 @@ class App(tk.Tk):
                     target_path = new_path
                     self.eff_path_var.set(str(target_path))
 
-                # Clear Description status (new)
+        # Clear Description status
         try:
             self.desc_status.config(text="")
         except Exception:
@@ -551,7 +880,7 @@ class App(tk.Tk):
             messagebox.showerror("Parse error", f"Failed to parse CGATS file:\n{e}")
             return
 
-        # Prefill Description from parsed file if present (new)
+        # Prefill Description from parsed file if present
         try:
             parsed_desc = (result.descriptive.get("DESCRIPTION") or "").strip()
             if parsed_desc:
@@ -562,16 +891,20 @@ class App(tk.Tk):
                     pass
         except Exception:
             pass
+
         measurement_uuid = str(uuid.uuid4())
         desc = result.descriptive
         desc.setdefault("MEASUREMENT_ID", measurement_uuid)
         desc.setdefault("PARSED_DATE", date.today().isoformat())
         project = (self.project_var.get() or "NONE").strip()
         template = (self.template_var.get() or "NONE").strip()
+        measurement = (self.measurement_var.get() or "NONE").strip()
         desc.setdefault("PROJECT", project if project else "NONE")
         desc.setdefault("TEMPLATE", template if template else "NONE")
+        desc.setdefault("MEASUREMENT", measurement if measurement else "NONE")
         desc["MEASUREMENT_DATE"] = mdate
-        # Include Description in descriptive data (new)
+
+        # Include Description in descriptive data
         try:
             desc_val = (self.desc_var.get() or "").strip()
         except Exception:
@@ -579,8 +912,8 @@ class App(tk.Tk):
         if desc_val:
             desc["DESCRIPTION"] = desc_val
         else:
-            # Keep parsed DESCRIPTION if present; otherwise default to NONE
             desc.setdefault("DESCRIPTION", "NONE")
+
         payload = to_json(desc, result.rows, measurement_uuid)
         indent = None if self.compact_var.get() else 2
 
@@ -595,20 +928,19 @@ class App(tk.Tk):
         prefs = {
             "project": self.project_var.get(),
             "template": self.template_var.get(),
+            "measurement": self.measurement_var.get(),
             "measurement_date": self.mdate_var.get(),
             "last_input_path": str(self.input_path) if self.input_path else "",
             "output_folder": str(self.output_folder),
             "output_filename": self.output_filename,
             "compact": bool(self.compact_var.get()),
         }
-        # Remember Description handling (new)
+        # Remember Description handling
         prefs["remember_description"] = bool(self.remember_desc_var.get())
         if prefs["remember_description"]:
             prefs["description"] = self.desc_var.get()
         else:
-            # ensure we don't persist a stale description
-            if "description" in prefs:
-                del prefs["description"]
+            prefs.pop("description", None)
         save_prefs_json(self.prefs_path, prefs)
 
         messagebox.showinfo("Done", f"Wrote JSON to:\n{target_path}")
@@ -618,13 +950,14 @@ class App(tk.Tk):
         prefs = {
             "project": self.project_var.get(),
             "template": self.template_var.get(),
+            "measurement": self.measurement_var.get(),
             "measurement_date": self.mdate_var.get(),
             "last_input_path": str(self.input_path) if self.input_path else "",
             "output_folder": str(self.output_folder),
             "output_filename": self.output_filename,
             "compact": bool(self.compact_var.get()),
         }
-        # Remember Description handling (new)
+        # Remember Description handling
         prefs["remember_description"] = bool(self.remember_desc_var.get())
         if prefs["remember_description"]:
             prefs["description"] = self.desc_var.get()
@@ -634,17 +967,19 @@ class App(tk.Tk):
         self.destroy()
 
 
-def main():
+def main(argv: list[str] | None = None):
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+
+    if args.nogui:
+        code = run_headless(args)
+        sys.exit(code)
+
+    # GUI path
     try:
-        import tkinter.ttk as _ttk
         root = App()
-        try:
-            style = _ttk.Style()
-            style.theme_use("clam")
-        except Exception:
-            pass
         root.mainloop()
-    except Exception as e:
+    except tk.TclError as e:
         print("Failed to start GUI:", e, file=sys.stderr)
         sys.exit(1)
 
